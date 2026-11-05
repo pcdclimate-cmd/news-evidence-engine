@@ -1,30 +1,62 @@
-"""Clearly fictional editorial fixtures. NOT current news or a verified news feed."""
-COUNTRIES = {
- 'SE':('Sverige','Sweden', ['Demo: Ny energistudie presenteras för byggnadssektorn','Demo: Universitet öppnar nytt forskningssamarbete']),
- 'DK':('Danmark','Denmark',['Demo: Kommun testar nytt system för energilagring','Demo: Forskare presenterar metod för kustövervakning']),
- 'NO':('Norge','Norway',['Demo: Pilotprojekt undersöker utsläpp från transporter','Demo: Myndighet föreslår förändrad datarapportering']),
- 'FI':('Finland','Finland',['Demo: Forskargrupp studerar vinterberedskap','Demo: Ny studie undersöker industrins elbehov']),
- 'DE':('Tyskland','Germany',['Demo: Forskare jämför industriella värmelösningar','Demo: Städer provar öppna trafikdata']),
- 'FR':('Frankrike','France',['Demo: Forskningsinstitut publicerar klimatmetodik','Demo: Region testar nytt regionalt transportsystem']),
- 'GB':('Storbritannien','United Kingdom',['Demo: Universitet lanserar studie om hälsa och luft','Demo: Forskargrupp analyserar vattenförsörjning']),
- 'US':('USA','United States of America',['Demo: Energilaboratorium presenterar försöksresultat','Demo: Universitetsnätverk lanserar datainitiativ']),
- 'CA':('Kanada','Canada',['Demo: Naturvårdsprojekt offentliggör mätserie','Demo: Regional forskningssatsning på batteriteknik']),
- 'BR':('Brasilien','Brazil',['Demo: Universitet studerar förändringar i regnskog','Demo: Forskningsgrupp presenterar analys av jordbruk']),
- 'ZA':('Sydafrika','South Africa',['Demo: Energiprojekt undersöker lokal nätdrift','Demo: Vattenforskare presenterar ny mätmetod']),
- 'IN':('Indien','India',['Demo: Forskningsstudie mäter stadsluftens kvalitet','Demo: Pilotprojekt testar nya transportsystem']),
- 'CN':('Kina','China',['Demo: Laboratorium publicerar materialstudie','Demo: Forskargrupp undersöker lagring av energi']),
- 'JP':('Japan','Japan',['Demo: Forskargrupp testar jordbävningssensorer','Demo: Ny prototyp för industriell återvinning']),
- 'AU':('Australien','Australia',['Demo: Forskare undersöker marina temperaturer','Demo: Pilotstudie om torka och vattenlager']),
- 'UA':('Ukraina','Ukraine',['Demo: Universitet utvecklar öppna geodata','Demo: Forskargrupp studerar infrastrukturens återhämtning']),
- 'ES':('Spanien','Spain',['Demo: Energilabb testar värmelagring','Demo: Ny studie om vattenåtervinning']),
- 'IT':('Italien','Italy',['Demo: Forskningsinstitut testar stadsklimatmodell','Demo: Universitet analyserar historiska mätserier']),
- 'PL':('Polen','Poland',['Demo: Pilotprojekt studerar återbruk i industrin','Demo: Forskargrupp kartlägger elnätets flexibilitet']),
- 'MX':('Mexiko','Mexico',['Demo: Forskningsprogram mäter grundvattennivåer','Demo: Studie jämför metoder för renare stadsluft']),
-}
+"""Live GDELT DOC search. Article listings are discovery, not fact-checking."""
+import json, time, threading, urllib.parse, urllib.request, urllib.error
+from pathlib import Path
+from datetime import datetime, timezone
 
-def country_news(code):
+COUNTRIES={c["code"]:c for c in json.loads((Path(__file__).parent / "countries.json").read_text(encoding="utf-8"))}
+CACHE={}
+CACHE_TTL=1800
+LOCK=threading.Lock()
+LAST_REQUEST=[0.0]
+API="https://api.gdeltproject.org/api/v2/doc/doc"
+
+def normalize_article(item, rank):
+    link=item.get("url", "")
+    parts=urllib.parse.urlsplit(link)
+    if parts.scheme not in ("http","https") or not parts.hostname:return None
+    title=(item.get("title") or "").strip()
+    if not title:return None
+    domain=item.get("domain") or parts.hostname
+    return {"rank":rank,"headline":title[:300],"url":link,"source":domain,
+            "language":item.get("language"),"source_country":item.get("sourcecountry"),
+            "seen_at":item.get("seendate"),"author":None,"status":"Inte faktagranskad"}
+
+def get_news(code):
     code=code.upper()
-    if code not in COUNTRIES:return {'country_code':code,'mode':'demo','stories':[]}
-    name,english,headlines=COUNTRIES[code]
-    return {'country_code':code,'country':name,'english_name':english,'mode':'demo','methodology':'Två fiktiva demonstrationsrubriker. Ingen redaktionell rankning eller verifiering utförd.',
-      'stories':[{'id':f'{code}-{i+1}','headline':h,'rank':i+1,'status':'Ej granskad','source':None,'author':None,'published_at':None,'cluster_id':None} for i,h in enumerate(headlines)]}
+    if code not in COUNTRIES:raise ValueError("Okänd landskod")
+    now=time.time()
+    with LOCK:
+        cached=CACHE.get(code)
+        if cached and now-cached[0]<CACHE_TTL:return dict(cached[1],cached=True)
+        # Gentle global pacing, avoid bursts toward GDELT. Do not hold the lock during network calls.
+        delay=max(0,6-(now-LAST_REQUEST[0]))
+        LAST_REQUEST[0]=now+delay
+    if delay:time.sleep(delay)
+    country=COUNTRIES[code]
+    params={"query":"sourcecountry:"+country["gdelt_country"],"mode":"ArtList",
+            "format":"json","timespan":"24h","maxrecords":"50","sort":"DateDesc"}
+    req=urllib.request.Request(API+"?"+urllib.parse.urlencode(params),headers={"User-Agent":"NewsFromFacts/3.0 (research prototype)","Accept":"application/json"})
+    try:
+        with urllib.request.urlopen(req,timeout=15) as response:
+            raw=response.read(2_000_000)
+            payload=json.loads(raw)
+    except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError) as exc:
+        with LOCK:
+            stale=CACHE.get(code)
+        if stale:return dict(stale[1],cached=True,stale=True,warning="GDELT svarar inte just nu; visar tidigare hämtade artiklar.")
+        raise RuntimeError("Nyhetsleverantören GDELT svarade inte. Försök igen senare.") from exc
+    articles=payload.get("articles",[])
+    seen=set();stories=[];domains=set()
+    for a in articles:
+        normalized=normalize_article(a,len(stories)+1)
+        if not normalized:continue
+        key=(normalized["url"].split('?')[0]).lower()
+        if key in seen or normalized["source"] in domains:continue
+        seen.add(key);domains.add(normalized["source"]);stories.append(normalized)
+        if len(stories)>=2:break
+    result={"country_code":code,"country":country["name"],"mode":"live",
+      "source":"GDELT DOC 2.0","retrieved_at":datetime.now(timezone.utc).isoformat(),
+      "methodology":"De två senaste tillgängliga artiklarna från olika publicistdomäner i GDELT:s senaste 24 timmar. Inte en rankning av de viktigaste nyheterna och inte faktagranskade.",
+      "stories":stories,"cached":False}
+    with LOCK:CACHE[code]=(time.time(),result)
+    return result
