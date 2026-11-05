@@ -1,25 +1,35 @@
-# News Evidence Engine – webbprototyp
+# News from Facts – världskarta (MVP 2.0)
 
-## Lokalt
+**Ny version av det befintliga GitHub/Render-projektet.** Startsidan (`/`) är nu en interaktiv världskarta. Den tidigare matematiska faktagranskaren finns kvar på `/granska` och API:et `/api/analyze` fungerar som tidigare.
 
-Kräver Python 3.10 eller senare. Kör `python server.py` och öppna http://127.0.0.1:8765.
+## Vad fungerar?
+- Interaktiv världskarta med länder, zoom, dragning och sökfält.
+- Klick på valfritt land. 20 valda länder har vardera två **fiktiva demonstrationsrubriker**; övriga länder visar tydligt att ingen data finns.
+- `/api/countries` listar de 20 exempeländerna.
+- `/api/news?country=SE` returnerar två demonstrationsposter och tydliga metadata om att de inte är verkliga nyheter.
+- `/api/health` lämnar ett enklare driftsvar.
+- Den befintliga faktagranskaren och testerna är bevarade.
 
-Kör automatiserade tester med `python -m unittest -v`.
+**OBS: Inga aktuella nyheter, automatiska redaktionella rankningar, riktiga skribenter, AI-verifiering eller källkopplingar finns ännu i paketet.** Det är avsiktligt för att undvika att fabricera rubriker. Kartans globala landsgränser laddas i webbläsaren från world-atlas via jsDelivr, och Leaflet/topojson laddas via CDN. Extern internetanslutning krävs för kartan.
 
-## Publicera med GitHub och Render
+## Uppdatera samma hemsida på Render
+1. Packa upp ZIP-filen lokalt. Öppna GitHub-repository `news-evidence-engine`.
+2. Välj **Add file → Upload files**. Dra in innehållet i mappen, **inte zip-filen**. GitHub frågar om du vill ersätta befintliga filer. Vid problem kan du ändra direkt via filernas Edit-knapp eller använda GitHub Desktop.
+3. Kontrollera att `index.html`, `granska.html`, `news_data.py`, `server.py`, `engine.py`, `test_engine.py`, `render.yaml`, `README.md` ligger i repositoryts rot (alternativt i samma Root Directory som redan är inställd på Render).
+4. Välj **Commit changes**. Om Render har **Auto-Deploy On Commit** publiceras ändringarna automatiskt.
+5. Kontrollera hemsidans startsida `/`, faktagranskaren `/granska`, samt `/api/health` och `/api/news?country=SE`.
 
-1. Skapa ett nytt repository i GitHub (helst privat) och ladda upp samtliga filer från denna mapp i roten av repositoryt, inte ZIP-filen.
-2. Öppna https://dashboard.render.com/ och skapa New > Web Service.
-3. Anslut ditt GitHub-repository. Render stöder en blueprint via render.yaml, eller ange manuellt:
-   - Language: Python 3
-   - Build Command: `python -m unittest -v`
-   - Start Command: `python server.py`
-   - Välj lämplig plan.
-4. Skapa tjänsten och öppna Render-URL:en som visas när den är publicerad.
-5. Lägg till en egen domän under Render-tjänstens inställningar om du vill.
+**Viktigt:** Kommandona på Render ska vara oförändrade: Build `python -m unittest -v`, Start `python server.py`. Ändra inga API-nycklar eller andra hemligheter i repositoryt.
 
-`server.py` använder miljövariabeln PORT och lyssnar på 0.0.0.0 när PORT finns, vilket är nödvändigt för Render.
+## Köra lokalt
+Python 3.10+: `python -m unittest -v` och `python server.py`, öppna därefter `http://127.0.0.1:8765/`.
 
-## Viktiga begränsningar
+## Kartteknik och källor
+Leaflet 1.9.4 (BSD-2-Clause): https://leafletjs.com/  
+world-atlas / Natural Earth (public domain kartdata): https://github.com/topojson/world-atlas  
+topojson-client 3: https://github.com/topojson/topojson-client
 
-Detta är en *demonstrationsprototyp*, inte en färdig publik faktagranskningstjänst. Analysen kräver att användaren själv matar in och graderar belägg. Inga källor hämtas eller verifieras automatiskt. Resultat är modellindex, inte sannolikheten att en nyhet är sann. Inget lagras. För bred offentlig användning behövs säkerhetshärdning, rate limiting, övervakning och fördjupad metodvalidering.
+Landsgränser är en approximativ kartrepresentation; omtvistade gränser kan skilja sig från olika jurisdiktioners officiella kartor.
+
+## Föreslagen nästa version
+En separat servermodul som hämtar licensierade nyhetsflöden; deduplicering och uppdelning på händelser; per-land rankning med transparenta kriterier; spårning av artikel, författare, originalpublicering och citeringsrelation; källbaserad påståendekontroll och osäkerhet. Automatiska granskningsresultat får inte presenteras som verifierade utan validering och tydlig möjlighet till rättelse.
