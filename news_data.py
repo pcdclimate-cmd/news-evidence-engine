@@ -1,14 +1,14 @@
 """Live GDELT DOC search. Article listings are discovery, not fact-checking."""
-import json, time, threading, urllib.parse, urllib.request, urllib.error
+import json, time, threading, urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone
+from gdelt_client import fetch_articles, GDELTError
 
 COUNTRIES={c["code"]:c for c in json.loads((Path(__file__).parent / "countries.json").read_text(encoding="utf-8"))}
 CACHE={}
 CACHE_TTL=1800
 LOCK=threading.Lock()
-LAST_REQUEST=[0.0]
-API="https://api.gdeltproject.org/api/v2/doc/doc"
+
 
 def normalize_article(item, rank):
     link=item.get("url", "")
@@ -28,24 +28,15 @@ def get_news(code):
     with LOCK:
         cached=CACHE.get(code)
         if cached and now-cached[0]<CACHE_TTL:return dict(cached[1],cached=True)
-        # Gentle global pacing, avoid bursts toward GDELT. Do not hold the lock during network calls.
-        delay=max(0,6-(now-LAST_REQUEST[0]))
-        LAST_REQUEST[0]=now+delay
-    if delay:time.sleep(delay)
     country=COUNTRIES[code]
-    params={"query":"sourcecountry:"+country["gdelt_country"],"mode":"ArtList",
-            "format":"json","timespan":"24h","maxrecords":"50","sort":"DateDesc"}
-    req=urllib.request.Request(API+"?"+urllib.parse.urlencode(params),headers={"User-Agent":"NewsFromFacts/3.0 (research prototype)","Accept":"application/json"})
     try:
-        with urllib.request.urlopen(req,timeout=15) as response:
-            raw=response.read(2_000_000)
-            payload=json.loads(raw)
-    except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError) as exc:
+        articles=fetch_articles("sourcecountry:"+country["gdelt_country"], timespan="24h", maxrecords=50)
+    except GDELTError as exc:
         with LOCK:
             stale=CACHE.get(code)
-        if stale:return dict(stale[1],cached=True,stale=True,warning="GDELT svarar inte just nu; visar tidigare hämtade artiklar.")
-        raise RuntimeError("Nyhetsleverantören GDELT svarade inte. Försök igen senare.") from exc
-    articles=payload.get("articles",[])
+        if stale:
+            return dict(stale[1],cached=True,stale=True,warning="GDELT är tillfälligt otillgängligt – visar tidigare hämtade nyheter.")
+        raise RuntimeError("GDELT-fel ("+exc.code+"): "+str(exc)) from exc
     seen=set();stories=[];domains=set()
     for a in articles:
         normalized=normalize_article(a,len(stories)+1)

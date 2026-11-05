@@ -14,7 +14,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
     def do_GET(self):
         parts=urlsplit(self.path);p=parts.path
-        if p=='/api/health':return self.send_json({'status':'ok','version':'4.0-links-beta'})
+        if p=='/api/health':return self.send_json({'status':'ok','version':'4.1-gdelt-stability'})
         if p=='/api/related':
             params=parse_qs(parts.query)
             headline=params.get('headline',[''])[0]

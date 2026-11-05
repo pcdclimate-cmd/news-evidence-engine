@@ -1,22 +1,21 @@
-# News from Facts v4.0 – Automatic cross-border discovery (beta)
+# News from Facts v4.1 – stabilare GDELT-hantering
 
-## What users see
+Denna uppdatering ändrar inte kartan eller artikelmatchningens metod. Den korrigerar hur nyhetsleverantörens fel hanteras.
 
-Click a country, then click **Visa kopplingar på kartan** on a news card. No URL entry required. The server queries GDELT for potentially related articles, filters candidates conservatively on common words in the *headlines*, and draws dotted connections to their publisher countries. Clicking another country or article resets the connections.
+- Gemensam begränsning av anrop från landsnyheter och internationell sökning.
+- Ett försiktigt återförsök vid överbelastning (HTTP 429/5xx) och nätverksfel.
+- JSON-kontroll och tydligare felkoder i API-svar.
+- Tidigare hämtade landsnyheter visas om tillgängliga vid ett tillfälligt leverantörsfel.
+- Inga nyheter hittas på om GDELT inte svarar.
 
-## Important limitations
+## Installera
 
-- This first beta is **NOT an AI fact checker**, nor does it calculate article truthfulness.
-- It compares headlines, not article bodies; cross-language links will often be missed and matches may be false positives.
-- Geographic lines show **publisher country**, not location of the reported event or origin of the claim.
-- No matches does not mean no coverage. GDELT coverage is incomplete and rate limited.
-- Next steps: structured event clustering, multilingual full-text comparisons, provenance tracing, claim-by-claim contradiction assessment and calibrated evidence scoring, with editorial review.
-- GDELT API response time is variable; do not promise instant completion. Loading starts immediately on click.
+Packa upp ZIP-filen. Kopiera samtliga projektfiler till din lokala `news-evidence-engine`-mapp via Windows Utforskaren. Välj *Ersätt filerna på målet*. Använd GitHub Desktop för **Commit to main → Push origin**. Render publicerar därefter ändringen.
 
-## Deployment
+## Kontroll
 
-Upload files into the existing GitHub repository and deploy the latest commit in Render. Start command: `python server.py`. Health check: `/api/health` gives `4.0-links-beta`.
+- `/api/health` ska visa `4.1-gdelt-stability`.
+- `/api/news?country=SE` ska visa två verkliga artiklar, en tom lista, eller ett mer specifikt fel (`rate_limited`, `network_error`, `invalid_response` eller HTTP-fel).
+- Kör `python -m unittest discover -v` lokalt.
 
-## Validation
-
-`python -m unittest discover -v`
+Observera att programmet inte kan garantera tillgänglighet hos GDELT. GDELT DOC 2.0 är en extern gratistjänst; fler nyhetskällor och schemalagd cache behöver byggas för stabil produktion.

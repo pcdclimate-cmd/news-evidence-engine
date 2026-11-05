@@ -1,6 +1,7 @@
 """Preliminary cross-border article discovery; does NOT fact-check articles."""
 import re,time,threading,json,urllib.parse,urllib.request,urllib.error,math
-from news_data import API, COUNTRIES, normalize_article
+from news_data import COUNTRIES, normalize_article
+from gdelt_client import fetch_articles, GDELTError
 
 STOP=set("the and with from after before about into over under that this said says are was were have has for its but not a an to of in on at by as is will who new live what when where why how latest update news report reports sweden sverige enligt efter från och eller med till för att som det den ett en har hade var ska kan om vid över under nya nyhet nyheter om säger sade uppger uppgift uppgifter".split())
 CACHE={};LOCK=threading.Lock()
@@ -35,14 +36,12 @@ def discover(headline,origin_country=None):
     now=time.time()
     with LOCK:
         if key in CACHE and now-CACHE[key][0]<600:return dict(CACHE[key][1],cached=True)
-    params={'query':query,'mode':'ArtList','format':'json','timespan':'72h','maxrecords':'100','sort':'DateDesc'}
-    req=urllib.request.Request(API+'?'+urllib.parse.urlencode(params),headers={'User-Agent':'NewsFromFacts/4.0 (research prototype)','Accept':'application/json'})
     try:
-        with urllib.request.urlopen(req,timeout=18) as response:payload=json.loads(response.read(3_000_000))
-    except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError) as exc:
-        raise RuntimeError('Internationell sökning är tillfälligt otillgänglig.') from exc
+        articles=fetch_articles(query, timespan="72h", maxrecords=100)
+    except GDELTError as exc:
+        raise RuntimeError("Internationell sökning: GDELT-fel ("+exc.code+"): "+str(exc)) from exc
     matches=[];seen_country=set();seen_domain=set()
-    for raw in payload.get('articles',[]):
+    for raw in articles:
         norm=normalize_article(raw,1)
         if not norm:continue
         code=country_code(norm['source_country'])
@@ -59,7 +58,7 @@ def discover(headline,origin_country=None):
         norm['match_score']=round(score,3)
         matches.append(norm)
         if len(matches)==12:break
-    result={'status':'preliminary','query':query,'headline':headline,'matches':matches,'checked_articles':len(payload.get('articles',[])),
+    result={'status':'preliminary','query':query,'headline':headline,'matches':matches,'checked_articles':len(articles),
        'note':'Kopplingar baseras på sökord och rubriköverlapp. De är inte verifierade händelsesamband. Avsaknad av linjer bevisar inte att internationell rapportering saknas.',
        'limitations':'Fulltext, språköversättning, originalkällor och AI-baserad påståendejämförelse ingår ännu inte.','cached':False}
     with LOCK:CACHE[key]=(time.time(),result)
