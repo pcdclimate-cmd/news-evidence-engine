@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: news-evidence-engine
+    runtime: python
+    plan: free
+    buildCommand: python -m unittest -v
+    startCommand: python server.py
